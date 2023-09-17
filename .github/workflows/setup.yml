@@ -8,8 +8,7 @@ on:
     branches: [ "main" ]
 
 env:
-  client_id: ${{ secrets.CLIENT_ID }}
-  client_secret: ${{ secrets.CLIENT_SECRET }}
+  
 
 jobs:
   build:
@@ -26,4 +25,10 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+    
+    - name: initialize secrets
+      env:
+        client_id: ${{ secrets.CLIENT_ID }}
+        client_secret: ${{ secrets.CLIENT_SECRET }}
+
 
