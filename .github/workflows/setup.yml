@@ -1,8 +1,7 @@
 name: Setup
 
 on:
-  pull_request:
-    branches: [ "main" ]
+  workflow_dispatch
 
 env:
   client_id: ${{ secrets.CLIENT_ID }}
@@ -21,4 +20,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          
+
+      - name: etst
+        run: echo "Text ${{ secrets.CLIENT_ID }} text "
