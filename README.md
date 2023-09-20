@@ -1,5 +1,12 @@
 # Discography Ranker
 
+## Table of Contents
+* [General Info](#general-info)
+* [Technologies](#technologies)
+* [Setup](#setup)
+* [Running the Ranker](#running-the-ranker)
+* [Tips](#tips)
+
 ## General Info
 This project assists users with ranking an artist's discography by spliting up
 the ranking process into simple song 1 or song 2 decisions.
@@ -55,7 +62,7 @@ artist specific files and are updated after each program execution.
 * /saves
 * /backups
 
-The results directory stores text files which display current rankings to the user.
+The results directory stores text files which display rankings to the user.
 
 The saves directory stores text files which store rankings for future program use. This aims to 
 avoid reranking previously ranked songs when adding new songs to the ranking.
