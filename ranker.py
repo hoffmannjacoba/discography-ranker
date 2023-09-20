@@ -6,6 +6,7 @@ import os.path
 import PIL.Image, PIL.ImageTk
 import shutil
 import urllib.request
+from dotenv import load_dotenv
 from requests import get, post
 from tkinter import *
 from tkinter import ttk
@@ -367,8 +368,9 @@ def right_song_skit():
     if rightSongName not in skits:
         skits.append(rightSongName)
 
-clientId = os.environ['client_id']
-clientSecret = os.environ['client_secret']
+load_dotenv()
+clientId = os.getenv("CLIENT_ID")
+clientSecret = os.getenv("CLIENT_SECRET")
 token = get_token(clientId, clientSecret)
 root = Tk()
 root.title("Discography Ranker")
