@@ -15,8 +15,8 @@ from tkinter import ttk
 class WebImage:
     def __init__(self, url):
         with urllib.request.urlopen(url) as u:
-            raw_data = u.read()
-        image = PIL.Image.open(io.BytesIO(raw_data))
+            rawData = u.read()
+        image = PIL.Image.open(io.BytesIO(rawData))
         self.image = PIL.ImageTk.PhotoImage(image)
 
     def get(self):
@@ -24,8 +24,8 @@ class WebImage:
 
 
 def get_token(clientId, clientSecret):
-    auth_string = clientId + ":" + clientSecret
-    authBytes = auth_string.encode("utf-8")
+    authString = clientId + ":" + clientSecret
+    authBytes = authString.encode("utf-8")
     authBase64 = str(base64.b64encode(authBytes), "utf-8")
     url = "https://accounts.spotify.com/api/token"
     headers = {
@@ -42,10 +42,8 @@ def get_auth_header(token):
 
 
 def search_for_artist(token, artistName):
-    url = "https://api.spotify.com/v1/search"
     headers = get_auth_header(token)
-    query = f"?q={artistName}&type=artist&limit=1"
-    queryUrl = url + query
+    queryUrl = "https://api.spotify.com/v1/search" + f"?q={artistName}&type=artist&limit=1"
     result = get(queryUrl, headers=headers)
     jsonResult = json.loads(result.content)["artists"]["items"]
     if len(jsonResult) == 0:
@@ -55,8 +53,8 @@ def search_for_artist(token, artistName):
 
 
 def get_artist_discography(token, artistId):
-    offset = 0
     headers = get_auth_header(token)
+    offset = 0
     while True:
         url = f"https://api.spotify.com/v1/artists/{artistId}/albums?country=US&offset={offset}&limit=50&include_groups=album,single,compilation"
         result = get(url, headers=headers)
@@ -76,16 +74,12 @@ def filter_duplicate_releases(token, releases):
     discoveredReleases = []
     filteredReleaseList = []
     for index, release in enumerate(releases):
+        releaseJson = json.loads(get(release['href'], headers=headers).content)
         if index != 0:
-            oldReleaseLabel = currentReleaseLabel
-        currentReleaseLabel = Label(root, text=f"Fetching releases ({release['name']})", anchor=CENTER, font="Helvetica")
-        currentReleaseLabel.pack(fill=BOTH, expand=True)
-        if index != 0:
-            oldReleaseLabel.destroy()
+            fetchLabel.destroy()
+        fetchLabel = Label(root, text=f"Fetching releases ({releaseJson['name']})", anchor=CENTER, font="Helvetica")
+        fetchLabel.pack(fill=BOTH, expand=True)
         root.update()
-        releaseUrl = release['href']
-        releaseResult = get(releaseUrl, headers=headers)
-        releaseJson = json.loads(releaseResult.content)
         if (releaseJson['name'], releaseJson['album_type']) not in discoveredReleases:
             discoveredReleases.append((releaseJson['name'], releaseJson['album_type']))
             filteredReleaseList.append(releaseJson)
@@ -97,7 +91,7 @@ def filter_duplicate_releases(token, releases):
                         filteredReleaseList.insert(index, releaseJson)
                         break
         if index == len(releases) - 1:
-            currentReleaseLabel.destroy()
+            fetchLabel.destroy()
     return filteredReleaseList
 
 
@@ -108,17 +102,13 @@ def get_tracks(token, albums):
     for albumIndex, album in enumerate(albums):
         simplifiedTracks = album['tracks']['items']
         for trackIndex, track in enumerate(simplifiedTracks):
-            trackUrl = track['href']
-            trackResult = get(trackUrl, headers=headers)
-            trackJson = (json.loads(trackResult.content))
+            trackJson = (json.loads(get(track['href'], headers=headers).content))
+            if albumIndex != 0 or trackIndex != 0:
+                addingLabel.destroy()
+            addingLabel = Label(root, text=f"Adding songs ({trackJson['name']})", anchor=CENTER, font="Helvetica")
+            addingLabel.pack(fill=BOTH, expand=True)
+            root.update()
             if track['name'] not in discoveredTracks:
-                if albumIndex != 0 or trackIndex != 0:
-                    oldTrackLabel = currentTrackLabel
-                currentTrackLabel = Label(root, text=f"Adding songs ({trackJson['name']})", anchor=CENTER, font="Helvetica")
-                currentTrackLabel.pack(fill=BOTH, expand=True)
-                if albumIndex != 0 or trackIndex != 0:
-                    oldTrackLabel.pack_forget()
-                root.update()
                 discoveredTracks.append(trackJson['name'])
                 filteredTrackList.append(trackJson)
             else:
@@ -129,72 +119,77 @@ def get_tracks(token, albums):
                             filteredTrackList.insert(index, trackJson)
                             break
             if albumIndex == len(albums) - 1 and trackIndex == len(simplifiedTracks) - 1:
-                currentTrackLabel.pack_forget()
+                addingLabel.destroy()
     return filteredTrackList
 
 
-def rank_tracks_util(prevRankedDisc, disc):
-    left = prevRankedDisc
+def rank_tracks_util(savedDisc, disc):
+    rankedDisc = [] # [[Name, Album, Cover Art Url, Popularity, Year, Month, Day], ...]
+    left = savedDisc
     right = disc
-    rankedDisc = [] # [[Song, Album, Cover Art Url, Popularity, Year, Month, Day], [Song, Album, Cover Art Url, Popularity, Year, Month, Day, Popularity]...]
-    for lindex, rankedTrack in enumerate(left):
-        for rindex, unrankedTrack in enumerate(right):
+
+    # remove previously ranked tracks
+    for li, rankedTrack in enumerate(left):
+        for ri, unrankedTrack in enumerate(right):
             if rankedTrack[0] == unrankedTrack[0]:
-                if rankedTrack[1] == '*Single/EP*' and unrankedTrack[1] != '*Single/EP*':
-                    left[lindex] = unrankedTrack
-                elif rankedTrack[3] < unrankedTrack[3]:
-                    left[lindex] = unrankedTrack
-                del right[rindex]
+                if rankedTrack[1] == '*Single/EP*' and unrankedTrack[1] != '*Single/EP*': # prefer album version > single version
+                    left[li] = unrankedTrack
+                elif rankedTrack[3] < unrankedTrack[3]: # prefer more popular version > less popular version
+                    left[li] = unrankedTrack
+                del right[ri]
                 break
+    
     rank_tracks(right)
     i = 0  # left index
     j = 0  # right index
     while i < len(left) and j < len(right):
-        global leftSongName
-        leftSongName = f"{left[i][0]}"
-        global rightSongName
-        rightSongName = f"{right[j][0]}"
-        if len(leftSongName) > 35:
-            leftSongName = leftSongName[0:35] + "..."
-        if len(rightSongName) > 35:
-            rightSongName = rightSongName[0:35] + "..."
-        leftSongLabel = Label(rankerFrame, text=leftSongName, font=("Helvetica", 20))
-        rightSongLabel = Label(rankerFrame, text=rightSongName, font=("Helvetica", 20))
-        leftSongImage = WebImage(left[i][2]).get()
-        leftSongImageLabel = Label(rankerFrame, image=leftSongImage)
-        rightSongImage = WebImage(right[j][2]).get()
-        rightSongImageLabel = Label(rankerFrame, image=rightSongImage)
-        leftSongButton = Button(rankerFrame, text=leftSongName, command=left_song_chosen, font="Helvetica")
-        rightSongButton = Button(rankerFrame, text=rightSongName, command=right_song_chosen, font="Helvetica")
-        leftSongSkitButton = Button(rankerFrame, text="Skit/Extra", command=left_song_skit, font="Helvetica")
-        rightSongSkitButton = Button(rankerFrame, text="Skit/Extra", command=right_song_skit, font="Helvetica")
-        skitButtonsLabel = Label(rankerFrame, text="Clicking the Skit/Extra buttons will negate the track's effect on the album ranking", font="Helvetica")
-        leftSongLabel.grid(row=0, column=0)
-        rightSongLabel.grid(row=0, column=3)
-        leftSongImageLabel.grid(row=1, column=0)
-        leftSongButton.grid(row=1, column=1)
-        rightSongButton.grid(row=1, column=2)
-        rightSongImageLabel.grid(row=1, column=3)
-        leftSongSkitButton.grid(row=2, column=0)
-        rightSongSkitButton.grid(row=2, column=3)
-        skitButtonsLabel.grid(row=2, column=1, columnspan=2)
+        global leftName
+        leftName = f"{left[i][0]}"
+        global rightName
+        rightName = f"{right[j][0]}"
+        if len(leftName) > 35:
+            leftName = leftName[0:35] + "..."
+        if len(rightName) > 35:
+            rightName = rightName[0:35] + "..."
 
-        leftSongButton.wait_variable(songChosen)
+        leftLabel = Label(rankerFrame, text=leftName, font=("Helvetica", 20))
+        rightLabel = Label(rankerFrame, text=rightName, font=("Helvetica", 20))
+        leftImage = WebImage(left[i][2]).get()
+        leftImageLabel = Label(rankerFrame, image=leftImage)
+        rightImage = WebImage(right[j][2]).get()
+        rightImageLabel = Label(rankerFrame, image=rightImage)
+        leftButton = Button(rankerFrame, text=leftName, command=left_song_chosen, font="Helvetica")
+        rightButton = Button(rankerFrame, text=rightName, command=right_song_chosen, font="Helvetica")
+        leftSkitButton = Button(rankerFrame, text="Skit/Extra", command=left_song_skit, font="Helvetica")
+        rightSkitButton = Button(rankerFrame, text="Skit/Extra", command=right_song_skit, font="Helvetica")
+        skitButtonsLabel = Label(rankerFrame, text="Clicking the Skit/Extra buttons will negate the track's effect on the album ranking", font="Helvetica")
+        leftLabel.grid(row=0, column=0)
+        rightLabel.grid(row=0, column=3)
+        leftImageLabel.grid(row=1, column=0)
+        leftButton.grid(row=1, column=1)
+        rightButton.grid(row=1, column=2)
+        rightImageLabel.grid(row=1, column=3)
+        leftSkitButton.grid(row=2, column=0)
+        rightSkitButton.grid(row=2, column=3)
+        skitButtonsLabel.grid(row=2, column=1, columnspan=2)
+        leftButton.wait_variable(songChosen)
         songChosen.set(0)
+
         if betterTrack == 1:
             rankedDisc.append(left[i])
             i += 1
         else:
             rankedDisc.append(right[j])
             j += 1
-        leftSongLabel.destroy()
-        rightSongLabel.destroy()
-        leftSongImageLabel.destroy()
-        rightSongImageLabel.destroy()
-        leftSongButton.destroy()
-        rightSongButton.destroy()
-        leftSongSkitButton.destroy()
-        rightSongSkitButton.destroy()
+
+        leftLabel.destroy()
+        rightLabel.destroy()
+        leftImageLabel.destroy()
+        rightImageLabel.destroy()
+        leftButton.destroy()
+        rightButton.destroy()
+        leftSkitButton.destroy()
+        rightSkitButton.destroy()
         skitButtonsLabel.destroy()
  
     while i < len(left):
@@ -216,37 +211,38 @@ def rank_tracks(disc):
         j = 0  # right index
         k = 0  # merged index
         while i < len(left) and j < len(right):
-            global leftSongName
-            leftSongName = f"{left[i][0]}"
-            global rightSongName
-            rightSongName = f"{right[j][0]}"
-            if len(leftSongName) > 35:
-                leftSongName = leftSongName[0:35] + "..."
-            if len(rightSongName) > 35:
-                rightSongName = rightSongName[0:35] + "..."
-            leftSongLabel = Label(rankerFrame, text=leftSongName, font=("Helvetica", 20))
-            rightSongLabel = Label(rankerFrame, text=rightSongName, font=("Helvetica", 20))
-            leftSongImage = WebImage(left[i][2]).get()
-            leftSongImageLabel = Label(rankerFrame, image=leftSongImage)
-            rightSongImage = WebImage(right[j][2]).get()
-            rightSongImageLabel = Label(rankerFrame, image=rightSongImage)
-            leftSongButton = Button(rankerFrame, text=leftSongName, command=left_song_chosen, font="Helvetica", width=30)
-            rightSongButton = Button(rankerFrame, text=rightSongName, command=right_song_chosen, font="Helvetica", width=30)
-            leftSongSkitButton = Button(rankerFrame, text="Skit/Extra", command=left_song_skit, font="Helvetica")
-            rightSongSkitButton = Button(rankerFrame, text="Skit/Extra", command=right_song_skit, font="Helvetica")
-            skitButtonsLabel = Label(rankerFrame, text="The Skit/Extra button will prevent the track from being considered in the album ranking calculation", font="Helvetica")
-            leftSongLabel.grid(row=0, column=0)
-            rightSongLabel.grid(row=0, column=3)
-            leftSongImageLabel.grid(row=1, column=0)
-            leftSongButton.grid(row=1, column=1)
-            rightSongButton.grid(row=1, column=2)
-            rightSongImageLabel.grid(row=1, column=3)
-            leftSongSkitButton.grid(row=2, column=0)
-            rightSongSkitButton.grid(row=2, column=3)
-            skitButtonsLabel.grid(row=2, column=1, columnspan=2)
+            global leftName
+            leftName = f"{left[i][0]}"
+            global rightName
+            rightName = f"{right[j][0]}"
+            if len(leftName) > 35:
+                leftName = leftName[0:35] + "..."
+            if len(rightName) > 35:
+                rightName = rightName[0:35] + "..."
 
-            leftSongButton.wait_variable(songChosen)
+            leftLabel = Label(rankerFrame, text=leftName, font=("Helvetica", 20))
+            rightLabel = Label(rankerFrame, text=rightName, font=("Helvetica", 20))
+            leftImage = WebImage(left[i][2]).get()
+            leftImageLabel = Label(rankerFrame, image=leftImage)
+            rightImage = WebImage(right[j][2]).get()
+            rightImageLabel = Label(rankerFrame, image=rightImage)
+            leftButton = Button(rankerFrame, text=leftName, command=left_song_chosen, font="Helvetica", width=30)
+            rightButton = Button(rankerFrame, text=rightName, command=right_song_chosen, font="Helvetica", width=30)
+            leftSkitButton = Button(rankerFrame, text="Skit/Extra", command=left_song_skit, font="Helvetica")
+            rightSkitButton = Button(rankerFrame, text="Skit/Extra", command=right_song_skit, font="Helvetica")
+            skitButtonsLabel = Label(rankerFrame, text="The Skit/Extra button will prevent the track from being considered in the album ranking calculation", font="Helvetica")
+            leftLabel.grid(row=0, column=0)
+            rightLabel.grid(row=0, column=3)
+            leftImageLabel.grid(row=1, column=0)
+            leftButton.grid(row=1, column=1)
+            rightButton.grid(row=1, column=2)
+            rightImageLabel.grid(row=1, column=3)
+            leftSkitButton.grid(row=2, column=0)
+            rightSkitButton.grid(row=2, column=3)
+            skitButtonsLabel.grid(row=2, column=1, columnspan=2)
+            leftButton.wait_variable(songChosen)
             songChosen.set(0)
+
             if betterTrack == 1:
                 disc[k] = left[i]
                 i += 1
@@ -255,14 +251,15 @@ def rank_tracks(disc):
                 disc[k] = right[j]
                 j += 1
                 k += 1
-            leftSongLabel.destroy()
-            rightSongLabel.destroy()
-            leftSongImageLabel.destroy()
-            rightSongImageLabel.destroy()
-            leftSongButton.destroy()
-            rightSongButton.destroy()
-            leftSongSkitButton.destroy()
-            rightSongSkitButton.destroy()
+
+            leftLabel.destroy()
+            rightLabel.destroy()
+            leftImageLabel.destroy()
+            rightImageLabel.destroy()
+            leftButton.destroy()
+            rightButton.destroy()
+            leftSkitButton.destroy()
+            rightSkitButton.destroy()
             skitButtonsLabel.destroy()
 
         while i < len(left):
@@ -275,59 +272,59 @@ def rank_tracks(disc):
             k += 1
 
 
-def sort_albums_year(albumVotes):
-    if len(albumVotes) > 1:
-        left = albumVotes[:len(albumVotes)//2]
-        right = albumVotes[len(albumVotes)//2:]
-        sort_albums_year(left)
-        sort_albums_year(right)
+def sort_albums_by_year(albums):
+    if len(albums) > 1:
+        left = albums[:len(albums)//2]
+        right = albums[len(albums)//2:]
+        sort_albums_by_year(left)
+        sort_albums_by_year(right)
         i = 0  # left index
         j = 0  # right index
         k = 0  # merged index
         while i < len(left) and j < len(right):
             if (left[i][1] > right[j][1]):
-                albumVotes[k] = left[i]
+                albums[k] = left[i]
                 i += 1
                 k += 1
             else:
-                albumVotes[k] = right[j]
+                albums[k] = right[j]
                 j += 1
                 k += 1
         while i < len(left):
-            albumVotes[k] = left[i]
+            albums[k] = left[i]
             i += 1
             k += 1
         while j < len(right):
-            albumVotes[k] = right[j]
+            albums[k] = right[j]
             j += 1
             k += 1
 
 
 
-def sort_albums_votes(albumVotes):
-    if len(albumVotes) > 1:
-        left = albumVotes[:len(albumVotes)//2]
-        right = albumVotes[len(albumVotes)//2:]
-        sort_albums_votes(left)
-        sort_albums_votes(right)
+def sort_albums_by_votes(albums):
+    if len(albums) > 1:
+        left = albums[:len(albums)//2]
+        right = albums[len(albums)//2:]
+        sort_albums_by_votes(left)
+        sort_albums_by_votes(right)
         i = 0  # left index
         j = 0  # right index
         k = 0  # merged index
         while i < len(left) and j < len(right):
             if (left[i][1] < right[j][1]):
-                albumVotes[k] = left[i]
+                albums[k] = left[i]
                 i += 1
                 k += 1
             else:
-                albumVotes[k] = right[j]
+                albums[k] = right[j]
                 j += 1
                 k += 1
         while i < len(left):
-            albumVotes[k] = left[i]
+            albums[k] = left[i]
             i += 1
             k += 1
         while j < len(right):
-            albumVotes[k] = right[j]
+            albums[k] = right[j]
             j += 1
             k += 1
 
@@ -361,31 +358,27 @@ def right_song_chosen():
     songChosen.set(1)
 
 def left_song_skit():
-    if leftSongName not in skits:
-        skits.append(leftSongName)
+    if leftName not in skits:
+        skits.append(leftName)
 
 def right_song_skit():
-    if rightSongName not in skits:
-        skits.append(rightSongName)
+    if rightName not in skits:
+        skits.append(rightName)
 
 load_dotenv()
-clientId = os.getenv("CLIENT_ID")
-clientSecret = os.getenv("CLIENT_SECRET")
-token = get_token(clientId, clientSecret)
+token = get_token(os.getenv("CLIENT_ID"), os.getenv("CLIENT_SECRET"))
 root = Tk()
 root.title("Discography Ranker")
 root.geometry("1300x700")
 abspath = os.path.dirname(os.path.abspath(__file__))
-if not os.path.exists(f'{abspath}/backups'):
-    os.mkdir(f'{abspath}/backups')
+if not os.path.exists(f'{abspath}/backupSaves'):
+    os.mkdir(f'{abspath}/backupSaves')
 if not os.path.exists(f'{abspath}/results'):
     os.mkdir(f'{abspath}/results')
 if not os.path.exists(f'{abspath}/saves'):
     os.mkdir(f'{abspath}/saves')
 
 # populate discography.txt with a discography of the users choice
-
-# gui
 enterArtistLabel = Label(root, text="Who's discography would you like to rank?", font=("Helvetica", 30))
 textEntry = Entry(root, width=25, font=("Helvetica", 18))
 artistSet = IntVar()
@@ -397,23 +390,18 @@ enterButton.wait_variable(artistSet)
 enterArtistLabel.destroy()
 textEntry.destroy()
 enterButton.destroy()
-# endgui
 
-artistId = userSelectedArtist["id"]
 artistName = userSelectedArtist["name"].replace(" ", "")
-releaseList = get_artist_discography(token, artistId)
-filteredReleaseList = filter_duplicate_releases(token, releaseList)
+filteredReleaseList = filter_duplicate_releases(token, get_artist_discography(token, userSelectedArtist["id"]))
 longestReleaseNameLength = 0
 for index, release in enumerate(filteredReleaseList):
     if len(release['name']) > longestReleaseNameLength:
         longestReleaseNameLength = len(release['name'])
 
-# gui
 loadingLabel = Label(root, text="loading...", anchor=CENTER, font="Helvetica")
 loadingLabel.pack(fill=BOTH, expand=True)
 root.update()
 releasesLabel = Label(root, text="Check all of the releases you would like to include in the ranking, then click rank", font=("Helvetica", 24))
-
 releaseListMainFrame = Frame(root, highlightbackground='#1DB954', highlightthickness=2, width=7*longestReleaseNameLength+305, height=400)
 releaseListCanvas = Canvas(releaseListMainFrame)
 releaseListCanvas.pack(side=LEFT, fill=BOTH, expand=1)
@@ -423,10 +411,10 @@ releaseListCanvas.configure(yscrollcommand=releaseListScrollbar.set)
 releaseListCanvas.bind('<Configure>', lambda e: releaseListCanvas.configure(scrollregion=releaseListCanvas.bbox("all")))
 releaseListScrollableFrame = Frame(releaseListCanvas)
 releaseListCanvas.create_window((0,0), window=releaseListScrollableFrame, anchor="nw")
-intVarList = []
-checkButtonList = []
 albumCoverList = []
 albumCoverLabelList = []
+intVarList = []
+checkButtonList = []
 longestReleaseNameLength = ""
 for index, release in enumerate(filteredReleaseList):
     albumCoverList.append(WebImage(release['images'][2]['url']).get())
@@ -446,9 +434,7 @@ oldRankingCheckButton = Checkbutton(root, text="Include and reference previous r
 oldRankingCheckButtonLabel = Label(root, text="(To restore a lost ranking, copy and paste the artist's backup file into their save file.)", font="Helvetica")
 rankButton = Button(root, text="Rank", command=save_selected_releases, font="Helvetica")
 loadingLabel.destroy()
-# endgui
 
-# gui
 releasesLabel.pack(pady=(100, 15))
 releaseListMainFrame.pack_propagate(0)
 releaseListMainFrame.pack()
@@ -494,7 +480,7 @@ with open(f'{abspath}/discography.txt', 'r') as tracks:
         if metadata[1] != "*Single/EP*" and [metadata[1], metadata[5], metadata[6], metadata[7]] not in albums:
             albums.append([metadata[1], metadata[5], metadata[6], metadata[7]])
 os.remove(f'{abspath}/discography.txt')
-sort_albums_year(albums)
+sort_albums_by_year(albums)
 
 # rank discography
 rankerFrame = Frame(root)
@@ -515,7 +501,7 @@ if useOldRanking.get() and os.path.isfile(f'{abspath}/saves/{artistName}Save.txt
             if metadata[4] == "skit":
                 skits.append(metadata[0])
     discography = rank_tracks_util(rankedDiscography, discography)
-    sort_albums_year(albums)
+    sort_albums_by_year(albums)
 else:
     rank_tracks(discography)
 rankerFrame.destroy()
@@ -530,7 +516,7 @@ for album in albumVotes:
             album[1] += ranking + 1
             numTracks += 1
     album[1] /= numTracks
-sort_albums_votes(albumVotes)
+sort_albums_by_votes(albumVotes)
 
 # print results and save in results.txt
 rstring = "Your Discography Ranking\n"
@@ -567,7 +553,7 @@ for ranking, track in enumerate(discography):
         rstring += f"        {i}. {track[0]} ({ranking + 1})\n"
         i += 1
 if os.path.isfile(f'{abspath}/saves/{artistName}Save.txt'):
-    shutil.copyfile(f'{abspath}/saves/{artistName}Save.txt', f'{abspath}/backups/{artistName}SaveBackup.txt')
+    shutil.copyfile(f'{abspath}/saves/{artistName}Save.txt', f'{abspath}/backupSaves/{artistName}SaveBackup.txt')
 with open(f'{abspath}/results/{artistName}Results.txt', 'w') as results:
     results.write(rstring)
 with open(f'{abspath}/saves/{artistName}Save.txt', 'w') as rankedDiscography:
