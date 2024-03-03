@@ -9,7 +9,7 @@
 
 ## General Info
 This project assists users with ranking an artist's discography by spliting up
-the ranking process into simple song 1 or song 2 decisions.
+the ranking process into simple "Which is better? Song A or Song B" decisions.
 	
 ## Technologies
 Project is created with:
